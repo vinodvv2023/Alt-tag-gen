@@ -1,28 +1,90 @@
-# Alt-tag-gen
-Image Accessibility Enhancer A powerful, flexible tool that generates rich, descriptive text for images to improve web accessibility. This application uses state-of-the-art Large Language Models (LLMs) to provide context-aware descriptions for both local and web-based images, making visual content accessible to everyone.
+# Alt Tag Generator
 
-Features
-Flexible Image Input: Process images directly from your local file system or by providing a web URL by read an excel file or by just parsing all the images folder of the app.
+This web application automatically generates descriptive alt tags for images using a powerful vision-language model. It supports both the Hugging Face API for cloud-based inference and local models via Ollama.
 
-Multiple AI Backends: Seamlessly switch between different inference providers:
+The app provides a simple gallery view of all processed images along with their generated descriptions and an option to export the results to an Excel file. This tool is designed to help improve web accessibility by making it easy to create meaningful alt text for visual content.
 
-Ollama: Run powerful models like LLaVA locally for full privacy and control.
+## Features
 
-Hugging Face: Access thousands of cutting-edge vision models via the transformers library or the Hugging Face Inference API.
+-   **Automatic Alt Tag Generation**: Scans a local directory for images and generates descriptive captions.
+-   **Flexible AI Backends**:
+    -   **Hugging Face**: Use the `nlpconnect/vit-gpt2-image-captioning` model via the Inference API.
+    -   **Ollama**: Connect to a locally running Ollama instance to use models like `llava` for full privacy and offline capability.
+-   **Web Gallery**: Displays images and their alt tags in a clean, user-friendly web interface.
+-   **Excel Export**: Allows you to download a list of all image filenames, their corresponding alt tags, and the backend used, in a single `.xlsx` file.
+-   **Easy to Configure**: Switch between backends by changing a single environment variable.
 
-High-Quality Descriptions: Generates detailed, human-like descriptions that go beyond simple object labels, capturing context, actions, and relationships within the image.
+---
 
-Easy to Integrate: Use it as a standalone command-line tool, a lightweight web service, or integrate it as a library into your existing applications.
+## ⚙️ Setup and Usage
 
-Customizable: Easily configure the model, prompts, and output format to suit your specific needs.
+Follow these steps to run the application on your local machine.
 
-⚙️ How It Works
-The application follows a simple yet powerful pipeline:
+### 1. Prerequisites
 
-Image Loading: The user provides an image either as a local file path or a public URL. The app fetches and preprocesses the image.
+-   Python 3.8+
+-   **For Hugging Face backend:** A Hugging Face account with an API Access Token.
+-   **For Ollama backend:** A local installation of [Ollama](https://ollama.com/) with a vision model pulled (e.g., `ollama pull llava`).
 
-Model Inference: The processed image is sent to the configured Large Language Model backend (Ollama, Hugging Face, etc.).
+### 2. Installation
 
-Description Generation: The vision-language model analyzes the image and generates a descriptive text caption based on its visual content.
+First, clone the repository to your local machine:
+```bash
+git clone <repository_url>
+cd <repository_directory>
+```
 
-Output: The generated description is returned to the user in the web UI, ready to be used as alt-text, for accessibility services, or content analysis. Other option is to provide the excel file with the generated content for the respective image. or provide the html page, app find the image filename adds the alt tag with description.
+Next, install the required Python packages:
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configuration
+
+The application is configured using a `.env` file.
+
+1.  **Create a `.env` file** by copying the example:
+    ```bash
+    cp .env.example .env
+    ```
+2.  **Edit the `.env` file** to choose and configure your backend.
+
+    **To use Hugging Face (default):**
+    -   Set `AI_BACKEND="huggingface"`.
+    -   Add your Hugging Face API key to `HUGGINGFACE_API_KEY`.
+
+    **To use Ollama:**
+    -   Make sure Ollama is running on your machine.
+    -   Set `AI_BACKEND="ollama"`.
+    -   Verify the `OLLAMA_API_URL` and `OLLAMA_MODEL` are correct for your setup.
+
+    *Example `.env` for Ollama:*
+    ```
+    AI_BACKEND="ollama"
+    HUGGINGFACE_API_KEY="" # Not needed for Ollama
+    OLLAMA_API_URL="http://localhost:11434"
+    OLLAMA_MODEL="llava"
+    ```
+
+### 4. Add Images
+
+Place any images you want to process into the `static/images` directory. The application will automatically detect and process them on page load.
+
+### 5. Running the Application
+
+Once the setup is complete, you can start the Flask web server:
+```bash
+python app.py
+```
+
+The application will be available at `http://127.0.0.1:5000`. Open this URL in your web browser to see the gallery.
+
+---
+
+## 🧪 Running Tests
+
+This project includes a suite of unit tests to ensure the core logic is working correctly for both backends. To run the tests, execute the following command from the root directory of the project:
+
+```bash
+python -m unittest discover tests
+```
