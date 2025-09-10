@@ -30,6 +30,29 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llava")
 # --- End Configuration ---
 
 
+def get_image_bytes(path_or_url: str) -> bytes:
+    """
+    Gets the byte content of an image from either a local file path or a URL.
+
+    Args:
+        path_or_url: The local file path or web URL of the image.
+
+    Returns:
+        The image content in bytes.
+
+    Raises:
+        FileNotFoundError: If a local file path is not found.
+        requests.exceptions.RequestException: If a URL request fails.
+    """
+    if path_or_url.startswith('http://') or path_or_url.startswith('https://'):
+        response = requests.get(path_or_url)
+        response.raise_for_status()
+        return response.content
+    else:
+        with open(path_or_url, "rb") as f:
+            return f.read()
+
+
 def generate_alt_text_huggingface(image_path: str) -> str:
     """Generates alt text for an image using the Hugging Face API."""
     api_key = os.getenv("HUGGINGFACE_API_KEY")
@@ -38,9 +61,8 @@ def generate_alt_text_huggingface(image_path: str) -> str:
 
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
-        with open(image_path, "rb") as f:
-            data = f.read()
-        response = requests.post(HF_API_URL, headers=headers, data=data)
+        image_bytes = get_image_bytes(image_path)
+        response = requests.post(HF_API_URL, headers=headers, data=image_bytes)
         response.raise_for_status()
         result = response.json()
 
@@ -49,22 +71,19 @@ def generate_alt_text_huggingface(image_path: str) -> str:
         else:
             app.logger.error(f"HF Error: Unexpected API response format: {result}")
             return "Error: Could not parse Hugging Face API response."
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"HF Error: API request failed: {e}")
-        return f"Error: Hugging Face API request failed: {e}"
+    except (requests.exceptions.RequestException, FileNotFoundError) as e:
+        app.logger.error(f"HF Error: Failed to get image data for '{image_path}'. Reason: {e}")
+        return f"Error: Failed to get image data. Reason: {e}"
     except (KeyError, IndexError):
         app.logger.error(f"HF Error: Malformed JSON response from API: {result}")
         return "Error: Unexpected Hugging Face API response format."
-    except FileNotFoundError:
-        app.logger.error(f"File not found for Hugging Face: {image_path}")
-        return "Error: File not found at path."
 
 
 def generate_alt_text_ollama(image_path: str) -> str:
     """Generates alt text for an image using a local Ollama model."""
     try:
-        with open(image_path, "rb") as f:
-            image_base64 = base64.b64encode(f.read()).decode('utf-8')
+        image_bytes = get_image_bytes(image_path)
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
         response = ollama.chat(
             model=OLLAMA_MODEL,
@@ -77,12 +96,12 @@ def generate_alt_text_ollama(image_path: str) -> str:
             ]
         )
         return response['message']['content']
+    except (requests.exceptions.RequestException, FileNotFoundError) as e:
+        app.logger.error(f"Ollama Error: Failed to get image data for '{image_path}'. Reason: {e}")
+        return f"Error: Failed to get image data. Reason: {e}"
     except ollama.ResponseError as e:
         app.logger.error(f"Ollama Error: API request failed: {e.error}")
         return f"Error: Ollama API request failed: {e.error}"
-    except FileNotFoundError:
-        app.logger.error(f"File not found for Ollama: {image_path}")
-        return "Error: File not found at path."
     except Exception as e:
         app.logger.error(f"Ollama Error: An unexpected error occurred: {e}")
         return f"Error: An unexpected error occurred with Ollama: {e}"

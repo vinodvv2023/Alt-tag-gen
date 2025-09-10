@@ -88,9 +88,9 @@ The application will be available at `http://127.0.0.1:5000`. When you first vis
 
 #### Processing Images via Excel Upload
 
-Alternatively, you can process a list of images from an Excel file. This is useful for images located anywhere on your file system.
+Alternatively, you can process a list of images from an Excel file. This is useful for images located anywhere on your file system or on the web.
 
-1.  Create an Excel file (`.xlsx`) with two columns: `Image Name` and `Image Path`.
+1.  Create an Excel file (`.xlsx`) with two columns: `Image Name` and `Image Path`. The path can be a local file path (e.g., `/path/to/my/image.jpg`) or a public URL (e.g., `http://example.com/image.png`).
 2.  Use the "Process Images from Excel File" form on the main page to upload your file.
 3.  The application will process each path from the file and load the results into the gallery. Note that this will replace any existing data in the gallery.
 
