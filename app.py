@@ -1,7 +1,9 @@
 import os
 import io
 import requests
-from flask import Flask, render_template, send_file, Response
+import base64
+import ollama
+from flask import Flask, render_template, send_file, Response, redirect, url_for
 from dotenv import load_dotenv
 import openpyxl
 
@@ -10,25 +12,23 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Configuration
-API_URL = "https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning"
+# --- In-Memory Cache ---
+image_cache = []
+# --- End Cache ---
+
+# --- Configuration ---
 IMAGE_DIR = "static/images"
 
+# Hugging Face Configuration
+HF_API_URL = os.getenv("HF_API_URL", "https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning")
 
-def generate_alt_text(image_path: str) -> str:
-    """Generates alt text for a single image using the Hugging Face API.
+# Ollama Configuration
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llava")
+# --- End Configuration ---
 
-    This function reads an image file, sends it to the specified Hugging Face
-    Inference API endpoint, and parses the response to extract the generated
-    text.
 
-    Args:
-        image_path: The absolute file path to the image.
-
-    Returns:
-        The generated alt text as a string. If the API key is missing, the request
-        fails, or the response is malformed, an error message string is returned.
-    """
+def generate_alt_text_huggingface(image_path: str) -> str:
+    """Generates alt text for an image using the Hugging Face API."""
     api_key = os.getenv("HUGGINGFACE_API_KEY")
     if not api_key:
         return "Error: HUGGINGFACE_API_KEY environment variable not set."
@@ -37,97 +37,122 @@ def generate_alt_text(image_path: str) -> str:
     try:
         with open(image_path, "rb") as f:
             data = f.read()
-        response = requests.post(API_URL, headers=headers, data=data)
-        response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
+        response = requests.post(HF_API_URL, headers=headers, data=data)
+        response.raise_for_status()
         result = response.json()
 
         if isinstance(result, list) and result and 'generated_text' in result[0]:
             return result[0]['generated_text']
         else:
-            app.logger.error(f"Unexpected API response format: {result}")
-            return "Error: Could not parse API response."
-
-    except FileNotFoundError:
-        app.logger.error(f"Image file not found at path: {image_path}")
-        return "Error: Image file not found."
+            app.logger.error(f"HF Error: Unexpected API response format: {result}")
+            return "Error: Could not parse Hugging Face API response."
     except requests.exceptions.RequestException as e:
-        app.logger.error(f"API request failed: {e}")
-        return f"Error: API request failed: {e}"
+        app.logger.error(f"HF Error: API request failed: {e}")
+        return f"Error: Hugging Face API request failed: {e}"
     except (KeyError, IndexError):
-        app.logger.error(f"Malformed JSON response from API: {result}")
-        return "Error: Unexpected API response format."
+        app.logger.error(f"HF Error: Malformed JSON response from API: {result}")
+        return "Error: Unexpected Hugging Face API response format."
 
 
-def get_image_data() -> list[dict[str, str]]:
-    """Scans the image directory, generates alt text for each image.
+def generate_alt_text_ollama(image_path: str) -> str:
+    """Generates alt text for an image using a local Ollama model."""
+    try:
+        with open(image_path, "rb") as f:
+            image_base64 = base64.b64encode(f.read()).decode('utf-8')
 
-    It locates the image directory, iterates through supported image file types,
-    and calls `generate_alt_text` for each one.
+        # The ollama library automatically uses the OLLAMA_HOST environment
+        # variable if set, otherwise defaults to http://localhost:11434.
+        response = ollama.chat(
+            model=OLLAMA_MODEL,
+            messages=[
+                {
+                    'role': 'user',
+                    'content': 'Describe this image in one sentence for use as alt text.',
+                    'images': [image_base64]
+                }
+            ]
+        )
+        return response['message']['content']
+    except ollama.ResponseError as e:
+        app.logger.error(f"Ollama Error: API request failed: {e.error}")
+        return f"Error: Ollama API request failed: {e.error}"
+    except Exception as e:
+        app.logger.error(f"Ollama Error: An unexpected error occurred: {e}")
+        return f"Error: An unexpected error occurred with Ollama: {e}"
 
-    Returns:
-        A list of dictionaries, where each dictionary contains the 'filename'
-        and its corresponding 'alt_text'. Returns an empty list if the
-        directory doesn't exist or contains no images.
-    """
+
+def generate_alt_text(image_path: str) -> str:
+    """Dispatcher function to generate alt text using the configured AI backend."""
+    backend = os.getenv("AI_BACKEND", "huggingface").lower()
+    if backend == 'ollama':
+        return generate_alt_text_ollama(image_path)
+    elif backend == 'huggingface':
+        return generate_alt_text_huggingface(image_path)
+    else:
+        error_msg = f"Invalid AI_BACKEND configured: '{backend}'. Please use 'huggingface' or 'ollama'."
+        app.logger.error(error_msg)
+        return error_msg
+
+
+def update_cache():
+    """Scans the image directory, generates alt text, and populates the cache."""
+    global image_cache
+    image_cache.clear() # Clear existing cache before updating
+
     image_folder_path = os.path.join(app.root_path, IMAGE_DIR)
     if not os.path.isdir(image_folder_path):
         app.logger.error(f"Image directory not found: {image_folder_path}")
-        return []
+        return
 
     supported_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')
     image_files = [f for f in os.listdir(image_folder_path) if f.lower().endswith(supported_extensions)]
 
-    image_data = []
     for filename in image_files:
         full_path = os.path.join(image_folder_path, filename)
-        alt_text = generate_alt_text(full_path)
-        image_data.append({'filename': filename, 'alt_text': alt_text})
-
-    return image_data
+        try:
+            alt_text = generate_alt_text(full_path)
+            image_cache.append({'filename': filename, 'alt_text': alt_text})
+        except FileNotFoundError:
+            app.logger.error(f"Image file not found at path: {full_path}")
+            image_cache.append({'filename': filename, 'alt_text': 'Error: File not found.'})
 
 
 @app.route('/')
 def index() -> str:
-    """Renders the main gallery page.
+    """Renders the main gallery page using cached data."""
+    backend = os.getenv("AI_BACKEND", "huggingface").lower()
+    return render_template('index.html', image_data=image_cache, backend=backend)
 
-    Fetches the image data and renders the `index.html` template,
-    displaying the gallery of images and their alt text.
 
-    Returns:
-        The rendered HTML page as a string.
-    """
-    image_data = get_image_data()
-    return render_template('index.html', image_data=image_data)
+@app.route('/refresh')
+def refresh():
+    """Forces a refresh of the image cache."""
+    update_cache()
+    return redirect(url_for('index'))
+
+
+@app.route('/clear')
+def clear_cache():
+    """Clears the in-memory image cache."""
+    global image_cache
+    image_cache.clear()
+    return redirect(url_for('index'))
 
 
 @app.route('/download_excel')
 def download_excel() -> Response:
-    """Generates and serves an Excel file with image alt tags.
-
-    Fetches the latest image and alt text data, creates an Excel workbook
-    in memory, and serves it as a downloadable file.
-
-    Returns:
-        A Flask Response object containing the Excel file.
-    """
-    image_data = get_image_data()
-
+    """Generates and serves an Excel file with image alt tags from the cache."""
+    backend = os.getenv("AI_BACKEND", "huggingface").lower()
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Alt Tags"
-
-    # Add headers
-    sheet.append(["Image Filename", "Alt Tag"])
-
-    # Add data rows
-    for item in image_data:
-        sheet.append([item['filename'], item['alt_text']])
-
-    # Save the workbook to a memory buffer
+    sheet.append(["Image Filename", "Alt Tag", "AI Backend"])
+    # Use the cached data
+    for item in image_cache:
+        sheet.append([item['filename'], item['alt_text'], backend])
     buffer = io.BytesIO()
     workbook.save(buffer)
     buffer.seek(0)
-
     return send_file(
         buffer,
         as_attachment=True,
