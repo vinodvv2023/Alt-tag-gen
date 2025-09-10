@@ -5,7 +5,7 @@ import base64
 import ollama
 from flask import Flask, render_template, send_file, Response, redirect, url_for
 from dotenv import load_dotenv
-import openpyxl
+import openpyxl 
 
 # Load environment variables from a .env file
 load_dotenv()
