@@ -1,0 +1,9 @@
+Flask
+requests
+Pillow
+openpyxl
+python-dotenv
+transformers
+torch
+ollama
+pandas

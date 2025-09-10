@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alt Tag Generator</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1em; }
+        .gallery-item { border: 1px solid #ccc; padding: 1em; text-align: center; }
+        .gallery-item img { max-width: 100%; height: auto; }
+        .alt-text { margin-top: 0.5em; font-style: italic; color: #555; }
+        .controls {
+            margin-bottom: 1.5em;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.8em 1.2em;
+            background-color: #007BFF;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-right: 0.5em;
+        }
+        .btn-success { background-color: #28a745; }
+        .btn-danger { background-color: #dc3545; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1em;
+        }
+        .info-box {
+            padding: 0.5em 1em;
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .flashes {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 1em;
+        }
+        .alert {
+            padding: 1em;
+            margin-bottom: 1em;
+            border-radius: 4px;
+            color: #fff;
+        }
+        .alert-success { background-color: #28a745; }
+        .alert-info { background-color: #17a2b8; }
+        .alert-danger { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flashes">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+    <div class="header">
+        <h1>Image Alt Tag Gallery</h1>
+        <div class="info-box">
+            Using backend: <strong>{{ backend }}</strong>
+        </div>
+    </div>
+    <div class="controls">
+        <a href="{{ url_for('refresh') }}" class="btn">Refresh Gallery</a>
+        <a href="{{ url_for('clear_cache') }}" class="btn btn-danger">Clear Cache</a>
+        <a href="{{ url_for('download_excel') }}" class="btn btn-success">Download as Excel</a>
+    </div>
+
+    <hr>
+
+    <div class="upload-section">
+        <h3>Process Images from Excel File</h3>
+        <form action="{{ url_for('upload_excel_file') }}" method="post" enctype="multipart/form-data">
+            <input type="file" name="excel_file" accept=".xlsx" required>
+            <button type="submit" class="btn">Upload and Process</button>
+        </form>
+    </div>
+
+    <hr>
+
+    <div class="gallery">
+        {% for image in image_data %}
+        <div class="gallery-item">
+            <img src="{{ url_for('static', filename='images/' + image.filename) }}" alt="{{ image.alt_text }}">
+            <p class="alt-text">{{ image.alt_text }}</p>
+        </div>
+        {% else %}
+        <p>No images found in the 'static/images' folder.</p>
+        {% endfor %}
+    </div>
+</body>
+</html>
