@@ -94,6 +94,16 @@ Alternatively, you can process a list of images from an Excel file. This is usef
 2.  Use the "Process Images from Excel File" form on the main page to upload your file.
 3.  The application will process each path from the file and load the results into the gallery. Note that this will replace any existing data in the gallery.
 
+#### Applying Alt Tags to an HTML File
+
+After you have generated a set of alt tags and they are visible in the gallery, you can apply them to an existing HTML file.
+
+1.  Use the "Apply Cached Alt Tags to HTML File" form to upload your HTML file.
+2.  The application will find `<img>` tags in your HTML whose `src` attribute contains the filename of an image in the cache.
+3.  For each match, it will inject the generated alt text into the `alt` attribute.
+4.  A new, modified HTML file will be provided for you to download.
+5.  The application will also notify you if any images from the cache were not found in your HTML file.
+
 ---
 
 ## 🧪 Running Tests

@@ -4,6 +4,7 @@ import requests
 import base64
 import ollama
 import pandas as pd
+from bs4 import BeautifulSoup
 from flask import Flask, render_template, send_file, Response, redirect, url_for, request, flash
 from dotenv import load_dotenv
 import openpyxl
@@ -31,19 +32,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llava")
 
 
 def get_image_bytes(path_or_url: str) -> bytes:
-    """
-    Gets the byte content of an image from either a local file path or a URL.
-
-    Args:
-        path_or_url: The local file path or web URL of the image.
-
-    Returns:
-        The image content in bytes.
-
-    Raises:
-        FileNotFoundError: If a local file path is not found.
-        requests.exceptions.RequestException: If a URL request fails.
-    """
+    """Gets the byte content of an image from either a local file path or a URL."""
     if path_or_url.startswith('http://') or path_or_url.startswith('https://'):
         response = requests.get(path_or_url)
         response.raise_for_status()
@@ -58,14 +47,12 @@ def generate_alt_text_huggingface(image_path: str) -> str:
     api_key = os.getenv("HUGGINGFACE_API_KEY")
     if not api_key:
         return "Error: HUGGINGFACE_API_KEY environment variable not set."
-
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
         image_bytes = get_image_bytes(image_path)
         response = requests.post(HF_API_URL, headers=headers, data=image_bytes)
         response.raise_for_status()
         result = response.json()
-
         if isinstance(result, list) and result and 'generated_text' in result[0]:
             return result[0]['generated_text']
         else:
@@ -84,7 +71,6 @@ def generate_alt_text_ollama(image_path: str) -> str:
     try:
         image_bytes = get_image_bytes(image_path)
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-
         response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=[
@@ -124,15 +110,12 @@ def update_cache_from_folder():
     """Scans the image directory, generates alt text, and populates the cache."""
     global image_cache
     image_cache.clear()
-
     image_folder_path = os.path.join(app.root_path, IMAGE_DIR)
     if not os.path.isdir(image_folder_path):
         app.logger.error(f"Image directory not found: {image_folder_path}")
         return
-
     supported_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')
     image_files = [f for f in os.listdir(image_folder_path) if f.lower().endswith(supported_extensions)]
-
     for filename in image_files:
         full_path = os.path.join(image_folder_path, filename)
         alt_text = generate_alt_text(full_path)
@@ -170,26 +153,22 @@ def upload_excel_file():
     if 'excel_file' not in request.files:
         flash('No file part in the request.', 'danger')
         return redirect(url_for('index'))
-
     file = request.files['excel_file']
     if file.filename == '':
         flash('No file selected for uploading.', 'danger')
         return redirect(url_for('index'))
-
     if file and file.filename.endswith('.xlsx'):
         try:
             df = pd.read_excel(file)
             if 'Image Path' not in df.columns or 'Image Name' not in df.columns:
                 flash("Excel file must have 'Image Name' and 'Image Path' columns.", 'danger')
                 return redirect(url_for('index'))
-
-            image_cache.clear() # Clear existing cache
+            image_cache.clear()
             for index, row in df.iterrows():
                 image_path = row['Image Path']
                 image_name = row['Image Name']
                 alt_text = generate_alt_text(image_path)
                 image_cache.append({'filename': image_name, 'alt_text': alt_text})
-
             flash(f"Successfully processed {len(df)} rows from the Excel file.", "success")
         except Exception as e:
             app.logger.error(f"Error processing Excel file: {e}")
@@ -197,6 +176,61 @@ def upload_excel_file():
         return redirect(url_for('index'))
     else:
         flash('Invalid file type. Please upload a .xlsx file.', 'danger')
+        return redirect(url_for('index'))
+
+
+@app.route('/apply_html', methods=['POST'])
+def apply_html():
+    """Applies cached alt tags to an uploaded HTML file."""
+    if not image_cache:
+        flash("Cache is empty. Please process some images first.", "danger")
+        return redirect(url_for('index'))
+    if 'html_file' not in request.files:
+        flash('No file part in the request.', 'danger')
+        return redirect(url_for('index'))
+    file = request.files['html_file']
+    if file.filename == '':
+        flash('No file selected for uploading.', 'danger')
+        return redirect(url_for('index'))
+    if file and (file.filename.endswith('.html') or file.filename.endswith('.htm')):
+        try:
+            html_content = file.read().decode('utf-8')
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            unmatched_files = [item['filename'] for item in image_cache]
+
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                if not src:
+                    continue
+
+                for i, item in enumerate(image_cache):
+                    if item['filename'] in src:
+                        img['alt'] = item['alt_text']
+                        if item['filename'] in unmatched_files:
+                            unmatched_files.pop(unmatched_files.index(item['filename']))
+                        break # Move to the next img tag once a match is found
+
+            if unmatched_files:
+                flash(f"The following images from the cache were not found in the HTML: {', '.join(unmatched_files)}", 'info')
+            else:
+                flash("Successfully applied all cached alt tags to the HTML file.", "success")
+
+            output_html = soup.prettify()
+            buffer = io.BytesIO(output_html.encode('utf-8'))
+
+            return send_file(
+                buffer,
+                as_attachment=True,
+                download_name='updated_tags.html',
+                mimetype='text/html'
+            )
+        except Exception as e:
+            app.logger.error(f"Error processing HTML file: {e}")
+            flash(f"An error occurred while processing the HTML file: {e}", "danger")
+        return redirect(url_for('index'))
+    else:
+        flash('Invalid file type. Please upload a .html or .htm file.', 'danger')
         return redirect(url_for('index'))
 
 
