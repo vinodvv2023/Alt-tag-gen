@@ -12,6 +12,8 @@ The app provides a simple gallery view of all processed images along with their 
     -   **Ollama**: Connect to a locally running Ollama instance to use models like `llava` for full privacy and offline capability.
 -   **Web Gallery**: Displays images and their alt tags in a clean, user-friendly web interface.
 -   **Excel Export**: Allows you to download a list of all image filenames, their corresponding alt tags, and the backend used, in a single `.xlsx` file.
+-   **In-Memory Caching**: Image data is cached in memory to prevent reprocessing, making downloads and page loads instant after the first scan.
+-   **Full Control**: A simple UI with "Refresh" and "Clear" buttons gives you full control over the cache.
 -   **Easy to Configure**: Switch between backends by changing a single environment variable.
 
 ---
@@ -68,7 +70,7 @@ The application is configured using a `.env` file.
 
 ### 4. Add Images
 
-Place any images you want to process into the `static/images` directory. The application will automatically detect and process them on page load.
+Place any images you want to process into the `static/images` directory.
 
 ### 5. Running the Application
 
@@ -77,7 +79,11 @@ Once the setup is complete, you can start the Flask web server:
 python app.py
 ```
 
-The application will be available at `http://127.0.0.1:5000`. Open this URL in your web browser to see the gallery.
+The application will be available at `http://127.0.0.1:5000`. When you first visit, the gallery will be empty.
+
+-   Click the **Refresh Gallery** button to scan the `static/images` directory and generate alt text for all images.
+-   If you add or remove images, click **Refresh Gallery** again to update the view.
+-   Click **Clear Cache** to empty the gallery.
 
 ---
 

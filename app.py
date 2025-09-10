@@ -3,7 +3,7 @@ import io
 import requests
 import base64
 import ollama
-from flask import Flask, render_template, send_file, Response
+from flask import Flask, render_template, send_file, Response, redirect, url_for
 from dotenv import load_dotenv
 import openpyxl
 
@@ -11,6 +11,10 @@ import openpyxl
 load_dotenv()
 
 app = Flask(__name__)
+
+# --- In-Memory Cache ---
+image_cache = []
+# --- End Cache ---
 
 # --- Configuration ---
 IMAGE_DIR = "static/images"
@@ -78,9 +82,7 @@ def generate_alt_text_ollama(image_path: str) -> str:
 
 
 def generate_alt_text(image_path: str) -> str:
-    """
-    Dispatcher function to generate alt text using the configured AI backend.
-    """
+    """Dispatcher function to generate alt text using the configured AI backend."""
     backend = os.getenv("AI_BACKEND", "huggingface").lower()
     if backend == 'ollama':
         return generate_alt_text_ollama(image_path)
@@ -92,47 +94,61 @@ def generate_alt_text(image_path: str) -> str:
         return error_msg
 
 
-def get_image_data() -> list[dict[str, str]]:
-    """Scans the image directory, generates alt text for each image."""
+def update_cache():
+    """Scans the image directory, generates alt text, and populates the cache."""
+    global image_cache
+    image_cache.clear() # Clear existing cache before updating
+
     image_folder_path = os.path.join(app.root_path, IMAGE_DIR)
     if not os.path.isdir(image_folder_path):
         app.logger.error(f"Image directory not found: {image_folder_path}")
-        return []
+        return
 
     supported_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')
     image_files = [f for f in os.listdir(image_folder_path) if f.lower().endswith(supported_extensions)]
 
-    image_data = []
     for filename in image_files:
         full_path = os.path.join(image_folder_path, filename)
         try:
             alt_text = generate_alt_text(full_path)
-            image_data.append({'filename': filename, 'alt_text': alt_text})
+            image_cache.append({'filename': filename, 'alt_text': alt_text})
         except FileNotFoundError:
             app.logger.error(f"Image file not found at path: {full_path}")
-            image_data.append({'filename': filename, 'alt_text': 'Error: File not found.'})
-
-    return image_data
+            image_cache.append({'filename': filename, 'alt_text': 'Error: File not found.'})
 
 
 @app.route('/')
 def index() -> str:
-    """Renders the main gallery page."""
-    image_data = get_image_data()
+    """Renders the main gallery page using cached data."""
     backend = os.getenv("AI_BACKEND", "huggingface").lower()
-    return render_template('index.html', image_data=image_data, backend=backend)
+    return render_template('index.html', image_data=image_cache, backend=backend)
+
+
+@app.route('/refresh')
+def refresh():
+    """Forces a refresh of the image cache."""
+    update_cache()
+    return redirect(url_for('index'))
+
+
+@app.route('/clear')
+def clear_cache():
+    """Clears the in-memory image cache."""
+    global image_cache
+    image_cache.clear()
+    return redirect(url_for('index'))
 
 
 @app.route('/download_excel')
 def download_excel() -> Response:
-    """Generates and serves an Excel file with image alt tags."""
-    image_data = get_image_data()
+    """Generates and serves an Excel file with image alt tags from the cache."""
     backend = os.getenv("AI_BACKEND", "huggingface").lower()
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Alt Tags"
     sheet.append(["Image Filename", "Alt Tag", "AI Backend"])
-    for item in image_data:
+    # Use the cached data
+    for item in image_cache:
         sheet.append([item['filename'], item['alt_text'], backend])
     buffer = io.BytesIO()
     workbook.save(buffer)

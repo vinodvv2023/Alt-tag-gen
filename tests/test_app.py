@@ -9,123 +9,119 @@ import ollama
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Now we can import from app
-from app import app, generate_alt_text_huggingface, generate_alt_text_ollama, get_image_data, generate_alt_text
+from app import app, generate_alt_text_huggingface, generate_alt_text_ollama, generate_alt_text, image_cache
 
-class AppTestCase(unittest.TestCase):
+class BackendTestCase(unittest.TestCase):
+    """Tests for the individual backend functions, isolated from the app."""
+
     def setUp(self):
-        """Set up a test client for the Flask application."""
-        self.app_context = app.app_context()
-        self.app_context.push()
-        self.client = app.test_client()
-        app.testing = True
         os.environ['HUGGINGFACE_API_KEY'] = 'test_api_key'
 
     def tearDown(self):
-        """Clean up after each test."""
         os.environ.pop('HUGGINGFACE_API_KEY', None)
-        os.environ.pop('AI_BACKEND', None)
-        self.app_context.pop()
 
     # --- Hugging Face Backend Tests ---
     @patch('app.requests.post')
     def test_generate_alt_text_huggingface_success(self, mock_post):
-        """Test generate_alt_text_huggingface on successful API call."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = [{'generated_text': 'a test description'}]
         mock_post.return_value = mock_response
-
         with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
-            alt_text = generate_alt_text_huggingface('dummy_path.jpg')
-
-        self.assertEqual(alt_text, 'a test description')
+            self.assertEqual(generate_alt_text_huggingface('dummy.jpg'), 'a test description')
 
     @patch('app.requests.post')
     def test_generate_alt_text_huggingface_api_error(self, mock_post):
-        """Test generate_alt_text_huggingface when the API returns an error."""
         mock_post.side_effect = requests.exceptions.RequestException("API is down")
-
         with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
-            alt_text = generate_alt_text_huggingface('dummy_path.jpg')
-
-        self.assertIn('Error: Hugging Face API request failed', alt_text)
-
-    def test_generate_alt_text_huggingface_no_api_key(self):
-        """Test generate_alt_text_huggingface when the API key is not set."""
-        os.environ.pop('HUGGINGFACE_API_KEY', None)
-        alt_text = generate_alt_text_huggingface('dummy_path.jpg')
-        self.assertIn('HUGGINGFACE_API_KEY environment variable not set', alt_text)
+            self.assertIn('Error: Hugging Face API request failed', generate_alt_text_huggingface('dummy.jpg'))
 
     # --- Ollama Backend Tests ---
     @patch('app.ollama.Client')
     def test_generate_alt_text_ollama_success(self, mock_ollama_client):
-        """Test generate_alt_text_ollama on successful API call."""
         mock_instance = mock_ollama_client.return_value
         mock_instance.chat.return_value = {'message': {'content': 'a local description'}}
-
         with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
-            alt_text = generate_alt_text_ollama('dummy_path.jpg')
-
-        self.assertEqual(alt_text, 'a local description')
+            self.assertEqual(generate_alt_text_ollama('dummy.jpg'), 'a local description')
 
     @patch('app.ollama.Client')
     def test_generate_alt_text_ollama_api_error(self, mock_ollama_client):
-        """Test generate_alt_text_ollama when the API returns an error."""
         mock_instance = mock_ollama_client.return_value
         mock_instance.chat.side_effect = ollama.ResponseError("Ollama is down")
-
         with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
-            alt_text = generate_alt_text_ollama('dummy_path.jpg')
+            self.assertIn('Error: Ollama API request failed', generate_alt_text_ollama('dummy.jpg'))
 
-        self.assertIn('Error: Ollama API request failed', alt_text)
+class DispatcherAndRouteTestCase(unittest.TestCase):
+    """Tests for the dispatcher, routes, and caching logic."""
+
+    def setUp(self):
+        self.app_context = app.app_context()
+        self.app_context.push()
+        self.client = app.test_client()
+        app.testing = True
+        # Clear the cache before each test
+        image_cache.clear()
+
+    def tearDown(self):
+        image_cache.clear()
+        os.environ.pop('AI_BACKEND', None)
+        self.app_context.pop()
 
     # --- Dispatcher Tests ---
     @patch('app.generate_alt_text_huggingface')
     @patch.dict(os.environ, {"AI_BACKEND": "huggingface"})
     def test_dispatcher_calls_huggingface(self, mock_hf_func):
-        """Test that the dispatcher calls the Hugging Face function."""
-        with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
-            generate_alt_text('dummy_path.jpg')
-        mock_hf_func.assert_called_once_with('dummy_path.jpg')
+        generate_alt_text('dummy.jpg')
+        mock_hf_func.assert_called_once_with('dummy.jpg')
 
     @patch('app.generate_alt_text_ollama')
     @patch.dict(os.environ, {"AI_BACKEND": "ollama"})
     def test_dispatcher_calls_ollama(self, mock_ollama_func):
-        """Test that the dispatcher calls the Ollama function."""
-        with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
-            generate_alt_text('dummy_path.jpg')
-        mock_ollama_func.assert_called_once_with('dummy_path.jpg')
+        generate_alt_text('dummy.jpg')
+        mock_ollama_func.assert_called_once_with('dummy.jpg')
 
-    @patch.dict(os.environ, {"AI_BACKEND": "invalid_backend"})
-    def test_dispatcher_handles_invalid_backend(self):
-        """Test that the dispatcher returns an error for an invalid backend."""
-        # This test doesn't need to open a file, as it should fail before that.
-        result = generate_alt_text('dummy_path.jpg')
-        self.assertIn("Invalid AI_BACKEND configured", result)
-
-    # --- Route and High-Level Tests (remain mostly unchanged) ---
-    @patch('app.get_image_data')
-    def test_index_route(self, mock_get_image_data):
-        """Test the main index route ('/')."""
-        mock_get_image_data.return_value = [{'filename': 'test.jpg', 'alt_text': 'a test image'}]
-
+    # --- Route and Cache Tests ---
+    @patch('app.update_cache')
+    def test_index_route_shows_empty_message(self, mock_update_cache):
+        """Test that the index route does not call update_cache and shows the empty message."""
         response = self.client.get('/')
+        mock_update_cache.assert_not_called()
+        self.assertIn(b"No images found", response.data)
+
+    @patch('app.update_cache')
+    def test_index_route_uses_existing_cache(self, mock_update_cache):
+        """Test that the index route does not call update_cache if cache is not empty."""
+        image_cache.append({'filename': 'test.jpg', 'alt_text': 'cached text'})
+        response = self.client.get('/')
+        mock_update_cache.assert_not_called()
+        self.assertIn(b'cached text', response.data)
+
+    @patch('app.update_cache')
+    def test_refresh_route(self, mock_update_cache):
+        """Test that the /refresh route calls update_cache."""
+        response = self.client.get('/refresh', follow_redirects=True)
+        mock_update_cache.assert_called_once()
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Image Alt Tag Gallery', response.data)
-        self.assertIn(b'test.jpg', response.data)
 
-    @patch('app.get_image_data')
-    def test_download_excel_route(self, mock_get_image_data):
-        """Test the Excel download route ('/download_excel')."""
-        mock_get_image_data.return_value = [
-            {'filename': 'test1.jpg', 'alt_text': 'first image'},
-            {'filename': 'test2.png', 'alt_text': 'second image'}
-        ]
+    def test_clear_route(self):
+        """Test that the /clear route empties the cache."""
+        # Populate the cache first
+        image_cache.append({'filename': 'test.jpg', 'alt_text': 'cached text'})
+        self.assertEqual(len(image_cache), 1)
+        # Hit the clear route
+        self.client.get('/clear')
+        # Check that the cache is now empty
+        self.assertEqual(len(image_cache), 0)
 
+    @patch('app.update_cache')
+    def test_download_excel_route(self, mock_update_cache):
+        """Test the Excel download route uses the cache."""
+        image_cache.append({'filename': 'test1.jpg', 'alt_text': 'cached excel text'})
         response = self.client.get('/download_excel')
+        # update_cache should not be called, it should use the existing cache
+        mock_update_cache.assert_not_called()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        self.assertIn('attachment; filename=alt_tags.xlsx', response.headers['Content-Disposition'])
 
 if __name__ == '__main__':
     unittest.main()

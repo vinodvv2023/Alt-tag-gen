@@ -10,15 +10,20 @@
         .gallery-item { border: 1px solid #ccc; padding: 1em; text-align: center; }
         .gallery-item img { max-width: 100%; height: auto; }
         .alt-text { margin-top: 0.5em; font-style: italic; color: #555; }
-        .download-btn {
+        .controls {
+            margin-bottom: 1.5em;
+        }
+        .btn {
             display: inline-block;
-            margin-bottom: 1em;
             padding: 0.8em 1.2em;
-            background-color: #4CAF50;
+            background-color: #007BFF;
             color: white;
             text-decoration: none;
             border-radius: 4px;
+            margin-right: 0.5em;
         }
+        .btn-success { background-color: #28a745; }
+        .btn-danger { background-color: #dc3545; }
         .header {
             display: flex;
             justify-content: space-between;
@@ -40,7 +45,11 @@
             Using backend: <strong>{{ backend }}</strong>
         </div>
     </div>
-    <a href="{{ url_for('download_excel') }}" class="download-btn">Download as Excel</a>
+    <div class="controls">
+        <a href="{{ url_for('refresh') }}" class="btn">Refresh Gallery</a>
+        <a href="{{ url_for('clear_cache') }}" class="btn btn-danger">Clear Cache</a>
+        <a href="{{ url_for('download_excel') }}" class="btn btn-success">Download as Excel</a>
+    </div>
     <div class="gallery">
         {% for image in image_data %}
         <div class="gallery-item">
