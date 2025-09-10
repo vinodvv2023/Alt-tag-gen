@@ -23,7 +23,6 @@ IMAGE_DIR = "static/images"
 HF_API_URL = os.getenv("HF_API_URL", "https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning")
 
 # Ollama Configuration
-OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llava")
 # --- End Configuration ---
 
@@ -61,8 +60,9 @@ def generate_alt_text_ollama(image_path: str) -> str:
         with open(image_path, "rb") as f:
             image_base64 = base64.b64encode(f.read()).decode('utf-8')
 
-        client = ollama.Client(host=OLLAMA_API_URL)
-        response = client.chat(
+        # The ollama library automatically uses the OLLAMA_HOST environment
+        # variable if set, otherwise defaults to http://localhost:11434.
+        response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=[
                 {

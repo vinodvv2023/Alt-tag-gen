@@ -37,17 +37,15 @@ class BackendTestCase(unittest.TestCase):
             self.assertIn('Error: Hugging Face API request failed', generate_alt_text_huggingface('dummy.jpg'))
 
     # --- Ollama Backend Tests ---
-    @patch('app.ollama.Client')
-    def test_generate_alt_text_ollama_success(self, mock_ollama_client):
-        mock_instance = mock_ollama_client.return_value
-        mock_instance.chat.return_value = {'message': {'content': 'a local description'}}
+    @patch('app.ollama.chat')
+    def test_generate_alt_text_ollama_success(self, mock_ollama_chat):
+        mock_ollama_chat.return_value = {'message': {'content': 'a local description'}}
         with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
             self.assertEqual(generate_alt_text_ollama('dummy.jpg'), 'a local description')
 
-    @patch('app.ollama.Client')
-    def test_generate_alt_text_ollama_api_error(self, mock_ollama_client):
-        mock_instance = mock_ollama_client.return_value
-        mock_instance.chat.side_effect = ollama.ResponseError("Ollama is down")
+    @patch('app.ollama.chat')
+    def test_generate_alt_text_ollama_api_error(self, mock_ollama_chat):
+        mock_ollama_chat.side_effect = ollama.ResponseError("Ollama is down")
         with patch('builtins.open', mock_open(read_data=b'fake_image_data')):
             self.assertIn('Error: Ollama API request failed', generate_alt_text_ollama('dummy.jpg'))
 

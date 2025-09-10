@@ -58,13 +58,14 @@ The application is configured using a `.env` file.
     **To use Ollama:**
     -   Make sure Ollama is running on your machine.
     -   Set `AI_BACKEND="ollama"`.
-    -   Verify the `OLLAMA_API_URL` and `OLLAMA_MODEL` are correct for your setup.
+    -   Verify the `OLLAMA_MODEL` is correct for your setup.
+    -   If your Ollama server is not at the default `http://localhost:11434`, set the `OLLAMA_HOST` variable.
 
     *Example `.env` for Ollama:*
     ```
     AI_BACKEND="ollama"
     HUGGINGFACE_API_KEY="" # Not needed for Ollama
-    OLLAMA_API_URL="http://localhost:11434"
+    OLLAMA_HOST="http://localhost:11434"
     OLLAMA_MODEL="llava"
     ```
 
